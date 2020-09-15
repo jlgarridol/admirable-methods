@@ -1,7 +1,9 @@
 import numpy as np
 from sklearn.decomposition import PCA
 import sklearn.utils
-from sklearn.base import TransformerMixin, ClusterMixin, ClassifierMixin
+from sklearn.base import TransformerMixin, ClusterMixin, ClassifierMixin, clone
+from sklearn.tree import DecisionTreeClassifier
+
 
 class Rotation(TransformerMixin):
     
@@ -69,6 +71,14 @@ class Rotation(TransformerMixin):
     def fit_transform(self, X):
         self.fit(X)
         return self.transform(X)
+
+    def get_params(self, deep=True):
+        return {"group_size": self.group_size, "random_state": self.rand, "group_weight":self.group_weight}
+
+    def set_params(self, **parameters):
+        for parameter, value in parameters.items():
+            setattr(self, parameter, value)
+        return self
         
 class RotatedCluster(ClusterMixin):
     
@@ -81,7 +91,7 @@ class RotatedCluster(ClusterMixin):
         
     def fit(self,X):
         X = self.rotation.fit_transform(X)
-        self.estimator.fit(X,y)
+        self.estimator.fit(X)
         
     def predict(self,X):
         X = self.rotation.transform(X)
@@ -91,3 +101,81 @@ class RotatedCluster(ClusterMixin):
         X = self.rotation.fit_transform(X)
         return self.estimator.fit_predict(X)
             
+
+class RotatedTree(ClassifierMixin):
+
+    def __init__(self, tree=DecisionTreeClassifier(), rotation=Rotation(), random_state=None):
+        self.rand=sklearn.utils.check_random_state(random_state)
+        self.tree = clone(tree)
+        self.rotation = clone(rotation)
+
+    def fit(self, X, y):
+        X = self.rotation.fit_transform(X)
+        self.tree.fit(X,y)
+
+    def predict(self, X):
+        X = self.rotation.transform(X)
+        return self.tree.predict(X)
+
+    def predict_proba(self, X):
+        X = self.rotation.transform(X)
+        return self.tree.predict_proba(X)
+
+    def score(self, X, y, sample_weight=None):
+        y_pred = self.predict(X)
+        diff = y_pred == y
+        return diff.mean()
+
+    def get_params(self, deep=True):
+        return {"tree": self.tree, "random_state": self.rand, "rotation":self.rotation}
+
+    def set_params(self, **parameters):
+        for parameter, value in parameters.items():
+            setattr(self, parameter, value)
+        return self
+
+class RotationForestClassifier(ClassifierMixin):
+
+    def __init__(self, base_estimator=DecisionTreeClassifier(), n_estimators=10, rotation=Rotation(), random_state=None):
+        self.rand=sklearn.utils.check_random_state(random_state)
+        self.tree = base_estimator
+        self.rotation = rotation
+        self.n_estimators = n_estimators
+
+    def fit(self, X, y):
+        self.estimators = []
+        for _ in range(self.n_estimators):
+            tree = RotatedTree(self.tree, self.rotation, self.rand)
+            tree.fit(X, y)
+            self.estimators.append(tree)
+    
+    def predict(self, X):
+        classes = []
+        for t in self.estimators:
+            predicts = t.predict(X)
+            classes.append(predicts)
+        classes = np.array(classes)
+        (v, c) = np.unique(classes, return_counts=True, axis=0)
+        ind=np.argmax(c, axis=0)
+        return v[ind]
+
+    def predict_proba(self, X):
+        probas = []
+        for t in self.estimators:
+            predicts = t.predict_proba(X)
+            probas.append(predicts)
+        probas = np.array(probas)
+        return probas.mean(axis=0)
+
+    def get_params(self, deep=True):
+        return {"base_estimator": self.tree, "random_state": self.rand, "rotation":self.rotation, "n_estimators":self.n_estimators}
+
+    def set_params(self, **parameters):
+        for parameter, value in parameters.items():
+            setattr(self, parameter, value)
+        return self
+
+    def score(self, X, y, sample_weight=None):
+        y_pred = self.predict(X)
+        diff = y_pred == y
+        return diff.mean()
