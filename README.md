@@ -18,7 +18,7 @@ data_rotated = rot.fit_transform(data)
 
 ```python
 from rotation import Rotation, RotationForest
-from  sklearn.utils import check_random_state
+from sklearn.utils import check_random_state
 from sklearn.datasets import load_iris
 from sklearn.model_selection import train_test_split
 
