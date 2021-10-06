@@ -1,35 +1,54 @@
 from os import replace
 import numpy as np
+from numpy.random import normal
+from scipy.sparse.construct import rand
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import normalize
 from sklearn.feature_selection import VarianceThreshold
 import sklearn.utils
 from sklearn.base import TransformerMixin, BaseEstimator, ClassifierMixin
+from sklearn.ensemble import BaseEnsemble
 from sklearn.exceptions import NotFittedError
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.base import clone as skclone
 
 
-
 class Rotation(TransformerMixin, BaseEstimator):
     
-    def __init__(self, group_size=3, group_weight=.50, pca=PCA(svd_solver="full"), random_state=None):
+    def __init__(self, group_size=3, group_weight=.50, pca=PCA(), normalize=True, random_state=None):
         """Rotation Transformer.
-
         Join of subspaces of the dataset transfomed with PCA keeping the subspace dimensionality.
-
         The transformation is made with a subsamples of the subspace. The subsamples and the subspaces are made randomly.
 
-        Args:
-            group_size (int, optional): Number of the features for each subspace. If the number of features mod group size are not zero, then the last subspace are created with features used previously selected randomly.. Defaults to 3.
-            group_weight (float, optional): Proportion of instances to be removed.. Defaults to .5.
-            pca (PCA, optional): PCA configuration, the n_components will be overwritten. Defaults to PCA().
-            random_state (None int or RandomState, optional): Random state for create subspaces and subsamples. Defaults to None.
+        Parameters
+        ----------
+        group_size : int, optional
+            Number of the features for each subspace. 
+            If the number of features mod group size are not zero, 
+            then the last subspace are created with 
+            features used previously selected randomly., by default 3
+        group_weight : float, optional
+            Proportion of instances to be removed., by default .50
+        pca : PCA, optional
+            PCA configuration, the n_components will be overwritten., by default PCA()
+        normalize : boolean, optional
+            Normalize data before fit and transform, the n_components will be overwritten., by default True
+        random_state : None, int or RandomState, optional
+            Random state for create subspaces and subsamples., by default None
         """
         self.group_size=group_size
         self.random_state=random_state
         self.group_weight=group_weight
-        self.pca = pca        
+        self.pca = pca
+        self.normalize = normalize
+
+    def _normalize(self, X):
+        return (X - self._med) / (self._std + self._noise)
+
+    def _calc_normalization(self, X, random_state):
+        self._std = np.std(X, axis=0)
+        self._med = np.mean(X, axis=0)
+        self._noise = [random_state.uniform(-0.000005, 0.000005) for p in range(0, X.shape[1])]
         
     def fit(self, X, y=None):
         """Create a rotation.
@@ -39,11 +58,16 @@ class Rotation(TransformerMixin, BaseEstimator):
             y (None): If not None it used for keep class proportion.
         """
         self.groups_ = []
-        self.pcas_ = []
+        self.pcas_ = []        
 
         rows, cols = X.shape
         cl = list(range(cols))
+
         random_state = sklearn.utils.check_random_state(self.random_state)
+
+        if self.normalize:
+            self._calc_normalization(X, random_state)
+            X = self._normalize(X)
 
         random_state.shuffle(cl)  # Shuffle columns
 
@@ -85,7 +109,7 @@ class Rotation(TransformerMixin, BaseEstimator):
             self.pcas_.append(p)
             
         # PCA        
-        
+        return self
             
     def transform(self, X):
         """Apply rotation to X.
@@ -100,6 +124,10 @@ class Rotation(TransformerMixin, BaseEstimator):
         """
         if not "pcas_" in dir(self):
             raise NotFittedError("Fit before transform.")
+
+        if self.normalize:
+            X = self._normalize(X)
+
         tformed = []
         for i in range(len(self.pcas_)):
             pca = self.pcas_[i]
@@ -109,20 +137,6 @@ class Rotation(TransformerMixin, BaseEstimator):
             tformed.append(x_t)
             
         return np.concatenate(tformed,axis=1)
-            
-    def fit_transform(self, X, y=None):
-        """Create the rotation of X and get the rotation of X.
-
-        Args:
-            X (array-like, shape (n_samples, n_features)): Training data, where n_samples is the number of samples and n_features is the number of features.
-            y (None): If not None it used for keep class proportion.
-
-        Returns:
-            array-like, shape (n_samples, n_components): Rotation of X.
-        """
-        self.fit(X, y)
-        return self.transform(X)
-            
 
 class RotatedTree(ClassifierMixin, BaseEstimator):
 
@@ -175,7 +189,7 @@ class RotatedTree(ClassifierMixin, BaseEstimator):
         X = self.rotation.transform(X)
         return self.base_estimator.predict_proba(X)
 
-class RotationForestClassifier(ClassifierMixin, BaseEstimator):
+class RotationForestClassifier(ClassifierMixin, BaseEnsemble):
 
     def __init__(self, base_estimator=DecisionTreeClassifier(), n_estimators=10, min_group_size=3, max_group_size=3, rotation=Rotation(), random_state=None):
         """Create a ensemble of rotation trees for clasification.
@@ -196,6 +210,7 @@ class RotationForestClassifier(ClassifierMixin, BaseEstimator):
         self.n_estimators = n_estimators
 
     def fit(self, X, y):
+
         """Fit the RotationForest model.
 
         Args:
