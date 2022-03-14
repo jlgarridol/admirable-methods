@@ -27,9 +27,9 @@ class Rotation(TransformerMixin, BaseEstimator):
         Parameters
         ----------
         group_size : int, optional
-            Number of the features for each subspace. 
-            If the number of features mod group size are not zero, 
-            then the last subspace are created with 
+            Number of the features for each subspace.
+            If the number of features mod group size are not zero,
+            then the last subspace are created with
             features used previously selected randomly., by default 3
         group_weight : float, optional
             Proportion of instances to be removed., by default .50
@@ -107,13 +107,7 @@ class Rotation(TransformerMixin, BaseEstimator):
                 )
 
                 X_t = X_t[samples]
-                # X_t = resample(X_t,
-                #                replace=False,
-                #                n_samples=int(
-                #                    (1.0 - self.remove_proportion) * X_t.shape[0]),
-                #                random_state=self._random_state.randint(100)
-                #                )
-
+                
             else:
                 original_X = X[:, group]
                 X_t = resample(X[:, group], replace=False,
@@ -169,7 +163,7 @@ class Rotation(TransformerMixin, BaseEstimator):
         self._std = np.std(X, axis=0)
         self._med = np.mean(X, axis=0)
         self._noise = [random.uniform(-0.000005, 0.000005) for p in range(0, X.shape[1])]
-        
+
     def _generate_groups(self, rng):
         permutation = rng.permutation((np.arange(0, self.n_atts)))
 
@@ -258,7 +252,7 @@ class RotatedTree(ClassifierMixin, BaseEstimator):
 class RotationForestClassifier(ClassifierMixin, BaseEnsemble):
 
     def __init__(self, base_estimator=DecisionTreeClassifier(criterion="entropy"), n_estimators=10, min_group_size=3, max_group_size=3, group_weight=0.5, transformer=PCA(), n_jobs=None, random_state=None):
-        
+
         self.random_state = random_state
         self.min_group_size = min_group_size
         self.max_group_size = max_group_size
