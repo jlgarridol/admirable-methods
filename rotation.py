@@ -15,7 +15,7 @@ from sklearn.preprocessing import LabelEncoder
 
 class Rotation(TransformerMixin, BaseEstimator):
 
-    def __init__(self, min_group=3, max_group=3, remove_proportion=.50, pca=PCA(), normalize=True, random_state=None):
+    def __init__(self, min_group=3, max_group=3, remove_proportion=.50, pca=PCA(), normalize=True, norm_mode="min-max", random_state=None):
         """Rotation Transformer.
         Join of subspaces of the dataset transfomed with PCA keeping the subspace dimensionality.
         The transformation is made with a subsamples of the subspace. The subsamples and the subspaces are made randomly.
@@ -54,6 +54,10 @@ class Rotation(TransformerMixin, BaseEstimator):
         pca.n_components = None
         self.pca = pca
         self.normalize = normalize
+        self.norm_mode = norm_mode
+        norm_modes = ["min-max", "noise"]
+        if self.norm_mode not in norm_modes:
+            raise AttributeError(f"`norm-mode`: \"{self.norm_mode}\" not allowed, it must be in {norm_modes}")
 
     def fit(self, X, y=None):
         """Create a rotation.
@@ -68,26 +72,31 @@ class Rotation(TransformerMixin, BaseEstimator):
 
         self.n_instances, self.n_atts = X.shape
 
-        self._random_state = check_random_state(self.random_state)
+        _random_state = check_random_state(self.random_state)
 
         if y is not None:
+            X, y = check_X_y(X, y)
             self.classes_ = np.unique(y)
             self.n_classes = self.classes_.shape[0]
-            X_cls_split = [X[np.where(y == i)] for i in self.classes_]
+            X_cls_split = [X[y == i] for i in self.classes_]
+
+        X = np.nan_to_num(X, False, 0, 0, 0)
+        self._useful_atts = ~np.all(X[1:] == X[:-1], axis=0)
+        X = X[:, self._useful_atts]
 
         if self.normalize:
-            self._calc_normalization(X, self._random_state)
+            self._calc_normalization(X, _random_state)
             X = self._normalize(X)
 
-        self.groups_ = self._generate_groups(self._random_state)
+        self.groups_ = self._generate_groups(_random_state)
         self.pcas_ = []
 
         for group in self.groups_:
 
             if y is not None:
-                classes = self._random_state.choice(
+                classes = _random_state.choice(
                     range(self.n_classes),
-                    size=self._random_state.randint(1, self.n_classes + 1),
+                    size=_random_state.randint(1, self.n_classes + 1),
                     replace=False,
                 )
 
@@ -98,22 +107,21 @@ class Rotation(TransformerMixin, BaseEstimator):
                     X_t = np.concatenate((X_t, c[:, group]), axis=0)
                     # random_state.random_sample((10, X_t.shape[1]))
 
-                original_X = X_t
-
-                samples = self._random_state.choice(
+                samples = _random_state.choice(
                     X_t.shape[0],
                     int(X_t.shape[0] * (1.0 - self.remove_proportion)),
                     replace=False
                 )
 
                 X_t = X_t[samples]
-                
+
+                original_X = X_t
             else:
                 original_X = X[:, group]
                 X_t = resample(X[:, group], replace=False,
                                n_samples=int(
                                    (1.0 - self.remove_proportion) * self.n_instances),
-                               random_state=self._random_state.randint(100))
+                               random_state=_random_state.randint(100))
 
             if X_t.shape[0] < 2:
                 X_t = original_X
@@ -124,11 +132,8 @@ class Rotation(TransformerMixin, BaseEstimator):
                     break
                 except Exception:
                     X_t = np.concatenate(
-                        (X_t, self._random_state.random_sample((10, X_t.shape[1]))), axis=0
+                        (X_t, _random_state.random_sample((10, X_t.shape[1]))), axis=0
                     )
-                    # X_t = np.concatenate(
-                    #     (X_t, resample(X_t, replace=False, n_samples=10, random_state=self._random_state.randint(100))), axis=0
-                    # )
 
             self.pcas_.append(pca)
 
@@ -148,6 +153,8 @@ class Rotation(TransformerMixin, BaseEstimator):
         if "pcas_" not in dir(self):
             raise NotFittedError("Fit before transform.")
 
+        X = np.nan_to_num(X, False, 0, 0, 0)
+        X = X[:, self._useful_atts]
         if self.normalize:
             X = self._normalize(X)
 
@@ -157,12 +164,19 @@ class Rotation(TransformerMixin, BaseEstimator):
         )
 
     def _normalize(self, X):
-        return (X - self._med) / (self._std + self._noise)
+        if self.norm_mode == "min-max":
+            return (X - self._min) / self._ptp
+        elif self.norm_mode == "noise":
+            return (X - self._med) / (self._std + self._noise)
 
     def _calc_normalization(self, X, random):
-        self._std = np.std(X, axis=0)
-        self._med = np.mean(X, axis=0)
-        self._noise = [random.uniform(-0.000005, 0.000005) for p in range(0, X.shape[1])]
+        if self.norm_mode == "min-max":
+            self._min = X.min(axis=0)
+            self._ptp = X.max(axis=0) - self._min
+        elif self.norm_mode == "noise":
+            self._std = np.std(X, axis=0)
+            self._med = np.mean(X, axis=0)
+            self._noise = [random.uniform(-0.000005, 0.000005) for p in range(0, X.shape[1])]
 
     def _generate_groups(self, rng):
         permutation = rng.permutation((np.arange(0, self.n_atts)))
@@ -217,7 +231,7 @@ class RotatedTree(ClassifierMixin, BaseEstimator):
             X (array-like, shape (n_samples, n_features)): Training data, where n_samples is the number of samples and n_features is the number of features.
             y (array-like, shape (n_samples,)): The target values.
         """
-        X_transformed = self.rotation.fit(X).transform(X, normalize=False)
+        X_transformed = self.rotation.fit_transform(X)
         self.base_estimator.fit(X_transformed, y)
         self.classes_ = self.base_estimator.classes_
 
@@ -262,6 +276,7 @@ class RotationForestClassifier(ClassifierMixin, BaseEnsemble):
         self.n_estimators = n_estimators
         self.n_jobs = n_jobs
 
+        self._class_dictionary = {}
         self.__check()
 
     def __check(self):
@@ -287,16 +302,20 @@ class RotationForestClassifier(ClassifierMixin, BaseEnsemble):
         X, y = check_X_y(X, y)
 
         self._le = LabelEncoder()
-        self._le.fit(y)
+        y_encoded = self._le.fit_transform(y)
 
         self.estimators_ = Parallel(n_jobs=self.n_jobs)(
             delayed(self._fit_estimator)(
-                X, y, random_state
+                X, y_encoded, random_state
             )
             for _ in range(self.n_estimators)
         )
 
-        self.classes_ = self.estimators_[0].classes_
+        self.classes_ = np.unique(y)
+        self.n_classes = self.classes_.shape[0]
+        for index, classVal in enumerate(self.classes_):
+            self._class_dictionary[classVal] = index
+        self._is_fitted = True
         return self
 
     def _fit_estimator(self, X, y, random_state):
@@ -318,17 +337,13 @@ class RotationForestClassifier(ClassifierMixin, BaseEnsemble):
             Array with predicted labels.
         """
 
-        check_is_fitted(self)
-
-        predictions = np.asarray([est.predict(X)
-                                 for est in self.estimators_]).T
-
-        maj = np.apply_along_axis(
-            lambda x: np.argmax(np.bincount(self._le.transform(x))),
-            axis=1,
-            arr=predictions,
+        rng = check_random_state(self.random_state)
+        return np.array(
+            [
+                self.classes_[int(rng.choice(np.flatnonzero(prob == prob.max())))]
+                for prob in self.predict_proba(X)
+            ]
         )
-        return self._le.inverse_transform(maj)
 
     def predict_proba(self, X, **kwargs):
         """Predict class probabilities for X.
@@ -342,9 +357,42 @@ class RotationForestClassifier(ClassifierMixin, BaseEnsemble):
         Returns:
             array-like, shape (n_samples, n_features): The class probabilities of the input samples. The order of the classes corresponds to that in the attribute classes_.
         """
-        probas = []
-        for t in self.estimators_:
-            predicts = t.predict_proba(X, **kwargs)
-            probas.append(predicts)
-        probas = np.array(probas)
-        return probas.mean(axis=0)
+        if not self._is_fitted:
+            raise NotFittedError(
+                f"This instance of {self.__class__.__name__} has not "
+                f"been fitted yet; please call `fit` first."
+            )
+        if isinstance(X, np.ndarray) and len(X.shape) == 3 and X.shape[1] == 1:
+            X = np.reshape(X, (X.shape[0], -1))
+        elif not isinstance(X, np.ndarray) or len(X.shape) > 2:
+            raise ValueError(
+                "RotationForest is not a time series classifier. "
+                "A 2d numpy array is required."
+            )
+
+        # replace missing values with 0 and remove useless attributes
+
+        y_probas = Parallel(n_jobs=self.n_jobs)(
+            delayed(self._predict_proba_for_estimator)(
+                X,
+                self.estimators_[i]
+            )
+            for i in range(self.n_estimators)
+        )
+
+        output = np.sum(y_probas, axis=0) / (
+            np.ones(self.n_classes) * self.n_estimators
+        )
+        return output
+
+    def _predict_proba_for_estimator(self, X, clf):
+        probas = clf.predict_proba(X)
+
+        if probas.shape[1] != self.n_classes:
+            new_probas = np.zeros((probas.shape[0], self.n_classes))
+            for i, cls in enumerate(clf.classes_):
+                cls_idx = self._class_dictionary[cls]
+                new_probas[:, cls_idx] = probas[:, i]
+            probas = new_probas
+
+        return probas
