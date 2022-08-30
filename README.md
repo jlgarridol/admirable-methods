@@ -1,6 +1,6 @@
-# Rotated methods 🔄🌲✨📈 
+# Admirable methods 🔄🌲✨📈 
 
-Rotated algorithms  based on Rotation Forest by [Rodriguez et. al.](https://doi.org/10.1109/TPAMI.2006.211)
+Algorithms from [ADMIRABLE Research Group](https://admirable-ubu.es/) from Burgos' University 
 
 ## How to
 ### Rotate a dataset
