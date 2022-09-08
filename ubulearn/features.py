@@ -1,5 +1,5 @@
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
-from sklearn.utils import check_random_state
+from sklearn.utils import check_random_state, check_X_y
 from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin, MetaEstimatorMixin, is_classifier
 from abc import ABCMeta, abstractmethod
 import numpy as np
@@ -123,6 +123,7 @@ class RFW(BaseEstimator, MetaEstimatorMixin):
         return self.define_tree(rs)
 
     def fit(self, X, y, sample_weight=None, check_input=True):
+        X, y = check_X_y(X, y)
         if is_classifier(self):
             self.classes_ = np.unique(y)
         self.trees_ = []
