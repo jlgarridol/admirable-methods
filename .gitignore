@@ -129,7 +129,9 @@ dmypy.json
 .pyre/
 
 .vscode/
+.idea/
 *.ipynb
 
 *.pickle
 *.pk
+pickles/
