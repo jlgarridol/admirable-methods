@@ -1,9 +1,10 @@
-from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 from sklearn.utils import check_random_state, check_X_y
 from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin, MetaEstimatorMixin, is_classifier
 from abc import ABCMeta, abstractmethod
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 import numpy as np
 from joblib import effective_n_jobs, Parallel, delayed
+
 
 
 class RFWTree(BaseEstimator):
@@ -18,6 +19,13 @@ class RFWTree(BaseEstimator):
                  max_depth, min_samples_split, min_samples_leaf,
                  min_weight_fraction_leaf, max_features, random_state,
                  max_leaf_nodes, min_impurity_decrease, ccp_alpha):
+        """
+        Jesús Maudes, Juan J. Rodríguez, César García-Osorio, Nicolás García-Pedrajas,
+        Random feature weights for decision tree ensemble construction,
+        Information Fusion, Volume 13, Issue 1, 2012,
+        Pages 20-30, ISSN 1566-2535,
+        https://doi.org/10.1016/j.inffus.2010.11.004.
+        """
         self.exponent = exponent
         self.criterion = criterion
         self.splitter = splitter
